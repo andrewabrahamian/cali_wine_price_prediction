@@ -1,0 +1,483 @@
+---
+title: "Lab 2 - Team 3 - Research Proposal"
+author: "Andrew Abrahamian, Victoria Hollingshead, Heesuk Jang, Hsi-sheng Wei"
+date: '2022-07-19'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message=FALSE)
+
+if(!require("tidytuesdayR")){install.packages('tidytuesdayR')}
+if(!require("GGally")){install.packages('GGally')}
+library(tidyverse)
+library(tidytuesdayR)
+library(car)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+library(GGally)
+
+source("../_scripts/pairs_extension.R")
+
+theme_set(theme_bw())
+```
+
+```{r load wine rating data, echo=FALSE, include=FALSE}
+
+wine_ratings <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-28/winemag-data-130k-v2.csv")
+
+wine_ratings <- wine_ratings[,-1]
+
+wine_ratings$vintage <- as.numeric(gsub("\\D", "", wine_ratings$title)) #extracts year from title of wine bottle
+
+```
+
+```{r filter data to requirements, echo=FALSE, include=FALSE}
+
+dat <- wine_ratings %>%
+  # filters data frame to NA in tasters
+  filter(is.na(taster_name)) #results in 26244 observations in our sample
+
+  # filters to years with 4 digits in the number
+dat <- dat %>% filter(nchar(vintage) == 4) #results in 24422 observations in our sample
+
+  # filters to US and California wines
+dat <- dat %>% filter(country %in% "US", province %in% "California") #results in 15223 observations in our sample
+
+  # filters to distinct observations
+dat <- dat %>% distinct() #results in 14514 observations in our sample
+
+```
+
+```{r create new region_3 and variety variables, echo = FALSE, include=FALSE}
+
+unique(dat$region_2)
+
+#create region_3 variable to summarize our California regions into ~7 levels
+dat <- dat %>%
+  mutate(region_3 = case_when(
+    region_2 == "Sonoma" ~ "Napa-Sonoma",
+    region_2 == "Napa" ~ "Napa-Sonoma",
+    region_2 == "South Coast" ~ "California Other",
+    is.na(region_2) ~ "California Other"
+  ),
+  region_3 = ifelse(is.na(region_3), region_2, region_3))
+
+#create age variable from date the wine data set was scraped
+dat['age'] = 2017 - dat$vintage
+
+#create map from grape variety to grape color
+map_variety <- read_csv("../notebooks/map_variety.csv")
+
+dat <- dat %>%
+  left_join(map_variety)
+
+dat <- dat %>% 
+  mutate(red = ifelse(color == "red", 1, 0),
+         white = ifelse(color == "white", 1, 0),
+         rose = ifelse(color == "rose", 1, 0))
+
+```
+
+
+```{r create train and test dataset, echo-FALSE, include=FALSE}
+
+set.seed(12345)
+
+samp_n <- round(nrow(dat)*.3, 0)
+
+train <- dat %>% sample_n(., size = samp_n)
+
+test <- dat %>% anti_join(train)
+
+```
+
+
+\newpage
+
+## Research Proposal
+
+1. Our team will be exploring the following research question: **Are wine ratings influenced by price, grape variety, region, year of vintage?** 
+
+  * X will be price for a bottle of the wine (metric), grape type (categorical), region(category), and vintage (category).
+  
+    * X main concept - Price
+    
+    * X sub concepts - Grape variety, region, year of vintage
+    
+  * Y will be wine rating in an ordinal scale, which is defined in the number of points Wine Enthusiast rated the wine on a scale of 80 -100 (Reviews for wines that score 1 - 79 are not available in the raw data set)
+
+2. The data source will be from [Tidy Tuesday: Wine Enthusiast Reviews](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-28).There are 129,971 rows and 13 columns. After removing reviews of identical wines and reviewers, the dataset is reduced to 108,290 rows. We are interested in filtering the dataset to the following sample frame, resulting in 26,244 observations. 
+
+  * Reviews: The sampling frame is exclusively composed of anonymous reviewers. Because we have limited information on reviewer details, we assume all anonymous reviewers are unique, have equal access to all wines in our model, and are pulled from the same distribution.
+
+    * Note on Reviews: Without any filtering, the dataset is overrepresented by 19 named reviewers. Reviews from 19 named reviewers make up over 80% of the overall dataset. We attribute this to the tendency for people who enjoy writing reviews to write more reviews. It is also possible that named reviewers are employed by Wine Enthusiasts, thus incentivizing their voluminous review count. In order to meet the IID requirements, we removed the reviews from these 19 named reviewers. We reason that removing this overrepresented group will allow us to minimize the bias in the sample distribution. Based on this, we assume all unknown reviewers have an equal opportunity to be selected.
+    
+  * Universe
+  
+    * Countries: We will be restricting the sample frame to wines produced in the US. Assuming collinearity between country and region, this restriction allows us to use region as an X concept in our regression models.
+    
+    * Grape Varieties: We will be restricting our model to the top 3 grape varieties.
+    
+    * Region: We will be restricting our model to the top 3 regions in the US.
+    
+    * Vintage: We will include 5-6 vintage year categories.
+    
+3. The unit of observation is a unique product review per bottle of wine.
+
+## Sush Feedback
+
+1. the research question seems too broad. Can you recognize a primary predictor and build the study on top of it. You may eventually add other covariates to build a better model, but the study should revolve around the primary predictor of interest.
+
+  * Points ~ Price
+
+  * Options:
+    * Points as a primary predictor. Requires Price to be treated as our Y variable
+      * treat Price as our outcome
+
+**Price (Y) ~ Points (X)**
+- grape variety could be more defensible (more valuable than country/region?)
+- vintage as a rule of thumb for predicting price ~ useful as a control variable
+
+2. do you think it is a good idea to use an ordinal variable for the response. You could use the usual OLS regression, but your study would then have its limitations. Within this context, can you suggest a different response variable that is metric??
+  * Evaluate Price as our Y variable
+    
+3. consider having a prior hypothesis about the effect of X on Y?
+  * Write down our theory of the relationship
+  * Develop first hypothesis test
+    * Null Hypothesis: No relationship between price (outcome) and points (predictor)
+      * Assume the coefficient of points is equal to zero
+    * Alt. Hypothesis: Assume that wine with higher rating will have a higher price controlling for vintage and grape varieties
+
+Additional Covariates:
+  * Vintage 
+  * Grape Variety
+  * Region
+  
+Scope Decisions:
+  * Global Model: country + vintage + grape variety <- eliminate due to issues w/ IID
+  **Country-specific: region + vintage + grape variety**
+
+\newpage
+
+```{r explore tablular data, include=FALSE, echo=FALSE}
+
+dat_w1 <- train %>% group_by(region_1, variety, winery, vintage) %>% 
+  summarize(wine_counts=n()) %>% arrange(desc(wine_counts))
+
+dat_w2 <- dat_w1 %>% filter(region_1 != "California") %>% #remove California label from region_1
+  group_by(region_1) %>% summarize(winery_counts = n()) %>% arrange(desc(winery_counts))
+  
+dat_w3 <- dat_w1 %>% filter(region_1 != "California") %>% #remove California label from region_1
+  group_by(variety) %>% summarize(variety_counts = n()) %>% arrange(desc(variety_counts))
+
+dat_w4 <- dat_w1 %>% filter(region_1 != "California") %>% #remove California label from region_1
+  group_by(vintage) %>% summarize(vintage_counts = n()) %>% arrange(desc(vintage_counts))
+
+```
+
+```{r boxplots rating x price x country, echo=FALSE, warning=FALSE}
+
+region_list <- dat_w2[1:10,]$region_1
+
+variety_list <- dat_w3[1:10,]$variety
+
+vintage_list <- dat_w4[1:10,]$vintage
+
+wine_boxp_reg <- ggplot(data = train, 
+                        aes(x=region_3, y=log(price), color=region_3)) +
+  geom_jitter(alpha=.3) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle=90)) +
+  ggtitle("Comparing Points Distribution by Top Regions With Most Wineries")
+
+wine_boxp_reg
+
+wine_boxp_var <- ggplot(data = train, 
+                        aes(x=color, y=log(price), color=color)) +
+  geom_jitter(alpha=.3) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle=90)) +
+  ggtitle("Comparing Price Distribution by Top Grape Varieties")
+
+wine_boxp_var
+
+wine_boxp_vin <- ggplot(data = train %>% filter(vintage %in% vintage_list), 
+                        aes(x=factor(vintage), y=log(price), color=factor(vintage))) +
+  geom_jitter(alpha=.3) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle=90)) +
+  ggtitle("Comparing Price Distribution by Top Vintages")
+
+wine_boxp_vin
+
+#scatter log(price) x points with color=age
+
+```
+
+Our Theory:
+* type of grape likely covaries with region due to temperature and soil requirements
+* some variation could be explained by variety and by region
+* vintage may explain some variation, but it could be limited
+
+```{r scatter price by points HJ, echo=FALSE, include=FALSE}
+
+top10_grape_types <- dat_w3[1:10,]$variety
+
+rating_by_grape_type <- ggplot(data=train %>% filter(variety %in% top10_grape_types), 
+                               aes(x=variety, y=price, fill=variety)) +
+  geom_bar(stat='identity') +
+  #geom_text(aes(label=avg_point), vjust=1.6, color="white",
+  #          position = position_dodge(0.9), size=3.5) +
+  theme(axis.text.x = element_text(angle=90)) +
+  # scale_fill_grey() +
+  #ylim(0, 110) +
+  labs(
+    title='Price of Top 10 Wines by Grape Type',
+    x='Grape Type',
+    y='Average Price'
+  )
+rating_by_grape_type
+```
+
+## Main Variable Comparison
+
+```{r scatter price by points, echo=FALSE, warning=FALSE}
+
+wine_sp <- ggplot(data=train, 
+                  aes(y=price, x=points)) +
+  geom_point(position = "jitter", alpha=.3) +
+  geom_smooth(se=TRUE) +
+  ggtitle("Comparing Points to Price")
+
+wine_sp
+
+wine_sp_log <- ggplot(data=train, 
+                  aes(y=log(price), x=points)) +
+  geom_point(position = "jitter", alpha=.3) +
+  geom_smooth(se=TRUE) +
+  ggtitle("Comparing Points to log(Price)")
+
+wine_sp_log
+
+wine_sp_reg <- ggplot(data=train, 
+                  aes(y=log(price), x=points, color=region_3)) +
+  geom_point(alpha=.3, position="jitter") +
+  geom_smooth() + 
+  ggtitle("Comparing Points to Price By Region")
+
+wine_sp_reg
+
+wine_sp_var <- ggplot(data=train, 
+                  aes(y=log(price), x=points, color=color)) +
+  geom_point(alpha=.3, position="jitter") +
+  geom_smooth(se=FALSE) + 
+  ggtitle("Comparing Points to Price By Grape Variety")
+
+wine_sp_var
+
+wine_sp_age <- ggplot(data=train, 
+                  aes(y=log(price), x=age)) +
+  geom_point(alpha=.3, position="jitter") +
+  geom_smooth(se=FALSE) + 
+  ggtitle("Comparing Age to Price by Region_3")
+
+wine_sp_age
+
+cor(train$points, log(train$price), use="pairwise")
+
+```
+
+\newpage
+
+## What Models Do We Want To Build
+
+### Model #1: Our Primary Relationship
+* log(Price) ~ Points
+* Selecting the log-linear model to use points + other covariates to explain **changes in price** caused by a change in points (rating)
+  
+### Model #2:
+* log(Price) ~ Points + variety
+
+### Model #3:
+* log(Price) ~ Points + variety + region_1
+
+### Model #4:
+* log(Price) ~ Points + variety + region_1 + vintage
+  - Vintage as metric: we're defining relationship between price x vintage
+  - Vintage as ordinal: distinct intercepts between points x price relationship
+    - ordinal can be subset of metric
+  - Expect the relationship: older vintage (smaller #), higher the price
+
+## What Is Needed Before Building Models
+* Build hypothesis test + theory of relationship between points and log(price) ~ X and Y
+* Identify specific layers of covariates to include in regression model
+
+
+\newpage
+
+## Begin Model Building
+#### Comparing Level-Level and Log-Level Model
+```{r points ~ price OLS model, echo=FALSE}
+par(mfrow=c(2,2))
+
+mod_nolog <- lm(price ~ points, data=train)
+summary(mod_nolog)
+plot(mod_nolog)
+
+mod <- lm(log(price) ~ points, data=train)
+summary(mod)
+plot(mod)
+
+coeftest(mod, vcov=vcovHC)
+
+```
+
+```{r build normal distribution plots, echo=FALSE}
+plot(mod, which=3)
+hist(mod$residuals)
+
+plot(mod_nolog, which=3)
+hist(mod_nolog$residuals)
+
+```
+
+
+#### Does some regional detail add insight?
+Yes, it explains +7% of variation in the model
+
+```{r log(price) ~ points + region_3 OLS model, echo=FALSE}
+
+mod2 <- lm(log(price) ~ points + region_3, data=train)
+print(summary(mod2))
+
+par(mfrow=c(2,2))
+plot(mod2)
+
+vif(mod2)
+
+```
+
+```{r perform validation on mod2, echo=FALSE}
+
+coeftest(mod2, vcov=vcovHC(mod2))
+
+waldtest(mod, mod2, vcov = vcovHC(mod2, type = "HC0")) #use this one!!!
+
+```
+
+
+```{r log(price) ~ points + region_3 + red, echo=FALSE}
+
+mod2_5 <- lm(log(price) ~ points + region_3 + red, data=train)
+print(summary(mod2_5))
+
+par(mfrow=c(2,2))
+plot(mod2_5)
+
+vif(mod2_5)
+
+```
+
+
+```{r perform validation on mod2_5, echo=FALSE}
+
+coeftest(mod2_5, vcov=vcovHC(mod2_5))
+
+waldtest(mod, mod2, vcov = vcovHC(mod2, type = "HC0")) #use this one!!!
+
+```
+
+#### What about wine color?
+
+
+```{r build models with region_3 and wine color, echo=FALSE}
+
+mod3 <- lm(log(price) ~ points + region_3 + color, data=train)
+summary(mod3)
+
+par(mfrow=c(2,2))
+plot(mod3)
+
+```
+
+```{r perform validation on mod3, echo=FALSE}
+
+coeftest(mod3, vcov=vcovHC(mod3))
+
+waldtest(mod, mod3, vcov = vcovHC(mod3, type = "HC0")) #use this one!!!
+
+vif(mod3)
+
+```
+
+#### What about vintage?
+
+
+```{r build models with country and grape variety and vintage, echo=FALSE}
+
+mod4 <- lm(log(price) ~ points + region_3 + color + age, data=train)
+summary(mod4)
+
+par(mfrow=c(2,2))
+plot(mod4)
+
+```
+
+
+
+```{r perform validation on mod4, echo=FALSE}
+
+coeftest(mod4, vcov=vcovHC(mod4))
+
+waldtest(mod, mod4, vcov = vcovHC(mod4, type = "HC0")) #use this one!!!
+
+vif(mod4)
+
+```
+
+```{r build stargazer table, echo=FALSE, results='asis'}
+
+stargazer::stargazer(mod, mod2, mod3, mod4, type = 'text')
+
+```
+
+```{r build ggpair plots, echo=FALSE}
+
+sub <- train %>%
+  mutate(ln_price = log(price)) %>%
+  select(ln_price, points, color)
+
+ggpairs(sub, ggplot2::aes(color=color))
+
+ggpairs(sub, 
+        upper = list(continuous = "density", combo = "box_no_facet"),
+        lower = list(continuous = "points", combo = "dot_no_facet")
+)
+
+```
+
+
+
+## Build Regression Models on Test Dataset
+
+```{r build final models on test dataset, echo=FALSE}
+
+final_mod <- lm(log(price) ~ points, data=test)
+
+final_mod2 <- lm(log(price) ~ points + region_3, data=test)
+
+final_mod3 <- lm(log(price) ~ points + region_3 + color, data=test)
+
+final_mod4 <- lm(log(price) ~ points + region_3 + color + age, data=test)
+
+```
+
+```{r evaluate those models}
+
+
+
+```
+
