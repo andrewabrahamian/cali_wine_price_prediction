@@ -10,3 +10,6 @@ In this study, we hope to provide valuable insight into which factors contribute
 
 [^1]: McMillan, Rob. “State of the US Wine Industry 2022” Silicon Valley Bank (2022).
 [^2]: Terlep, Sharon. “Americans Are Showing Inflation Fatigue, and Some Companies See a Breaking Point” The Wall Street Journal (2022).
+
+## [Final Report PDF](https://github.com/andrewabrahamian/cali_wine_price_prediction/blob/main/lab2_part3_final-report_vFINAL.pdf)
+## [Final Report Rmarkdown](https://github.com/andrewabrahamian/cali_wine_price_prediction/blob/main/lab2_part3_final-report_vFINAL.Rmd)
